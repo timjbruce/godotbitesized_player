@@ -2,6 +2,12 @@
 
 This repo represents the Godot Bite Sized Player - 2D. What is a Bite Sized Player - 2D, you might ask? The answer is in two parts. First, it's the player object that is being created under my (Godot Bite Sized content series)[https://github.com/timjbruce/godotbitesized]. In this series, I take a 5-10 lesson and make something concrete for developers to follow along / learn about Godot. Second, it is the 2D Player object that will be used in games that I create. It will be a component that can be copies (or used as a plug-in, I'm not dropping that goal!) in a 2D game and offer capabilities to get game developers started. A working game, no matter how small the increment, is the goal!
 
+## Table of Contents
+
+[Build 1](#build-1) - Start the Character
+
+[Build 2](#build-2) - Add physics via an initialize script
+
 ## Build 1
 
 For Build 1, we're going to form the _very_ basic Player for a game. For 2D Games, this means a 2D Scene with an image that can move in different directions. For 2D games in Godot, we should use (CharacterBody2D)[https://docs.godotengine.org/en/stable/classes/class_characterbody2d.html] as the base object. This gives us a bunch of capabilities, like handling physics so it can move. Your end project will look something like this when you look at the file browser:
@@ -51,6 +57,13 @@ Click on the button that reads "Add 4 Frame(s)" and the images should be added t
 Now repeat this same process for the other 3 animations, using `adventurer_idle.png` for "idle," `adventurer_right.png` for "walk," and `adventurer_up.png` for "up." For "right," you will need to change the frames to 5 Horizontal and 1 Vertical and select all 5 frames.
 
 The player might look a little small when loaded. We can do a quick fix on that. Select the "AnimatedSprite2D" node in your scene browser, go into the "Transform" section of the inspector and set the scale to 2 for x and 2 for y. If you have these linked, you should only have to change it for x and it will also change for y.
+
+---
+**NOTE**
+
+I did not set the Texture Filters to "Nearest" in Build1. You can add this by clicking o the AnimatedSprite2D object, checking the Inspector under Canvas Item, and changing the value for Texture -> Filter to "Nearest." This value is set in Build2. Thank you OkMonk6021!
+
+---
 
 Next, we will update the CollisionShape2D object. Select it in the Scene Browser. The CollisionShape2D needs a shape that works with the AnimatedSprite2D shape. This will help your collisions seem more accurate to players when they play your game. In the Inspector, click on the down arrow by "Shape" and select "RectangleShape2D."
 
@@ -132,3 +145,61 @@ If you want, you can play this scene using the F6 key. Note that the Player anim
 ![Use the override the in-game camera to watch your player move around, and off, the screen](readmeassets/build_1/1_override_camera.png)
 
 Happy Building and I'll see you for the next component build!
+
+## Build 2
+
+Build 2 is going to use an initialize script instead of setting properties for physics using the Inspector. You might be wondering why. The main reason is that we will want to change physics layers for our games. In the generator build, I know walls are always going to be layer 2. Characters might have many different layers, however. We could develop a ghost that goes through walls. We could have multiple players in the game, in which case, we might want them to collide with each other. And, my favorite, we might want to enable or disable friendly fire. If we start with an initialize script now, we start to enable building in a more componentized fashion now.
+
+So, why didn't we do this initially? We didn't have anything to set, initially. However, we're going to make some changes and start that path now!
+
+### Create the Initialize function
+
+Open up the `player.gd` script. The first thing we're going to do is to update the SPEED variable. With capitalization, this variable reads more as a constant and we will want to expose this as a property that can be filled in or set with the initialize function. We also don't specify what type of variable it is, so we'll fix that with the following update:
+
+```
+@export var speed: int = 600
+```
+
+In your editor, you'll see 4 lines highlighted because we changed the name from `SPEED` to `speed`. Update these lines to use the new variable speed so they look like this:
+
+```
+		velocity.x = x_direction * speed
+	else:
+		velocity.x = move_toward(velocity.x, 0, speed)
+	if y_direction:
+		velocity.y = y_direction * speed
+	else:
+		velocity.y = move_toward(velocity.y, 0, speed)
+```
+
+Now, we can change the Players speed either via properties, if we paint the Player into a scene.
+
+Next, we'll add the `initialize` function. Our initialize function will take 4 inputs. The first one will be the name of the object. All objects that will be instantiated should have a unique name. This will help when inspecting what the object is at runtime. The second will be the speed of the character. The last two will be the layer(s) the Player will exist on and the final will be the masks that will be used to detect collisions. Within this function, we'll set these values.
+
+I could set these values directly on the `Player` by navigating through the scene tree, as needed. The reason I use the `initialize` function instead is that this allows me to refactor any part or the entire scene without needing to worry about updating any part of my game that calls these items directly. I can change how things are implemented without having to chase down all the parts of my game code that references them. This is using a strategy called "loose coupling," where components are free to change the implementation of a feature without causing a ripple effect to other parts of your game.
+
+If you're starting to wonder about what you can do with loose coupling, that's great! If you're on the fence or still wrapping your head around it, that's ok! In either case, stick around for a while longer and I hope that you'll see how I use this approach in a practical manner and, hopefully, that will spark some ideas.
+
+Let's add our `initialize` function to the `player.gd` file:
+
+```
+func initialize(inc_name: String, inc_speed: int, inc_layers: Array[int], inc_mask: Array[int]) -> void:
+	name = inc_name
+	speed = inc_speed
+	for layer in inc_layers:
+		set_collision_layer_value(layer, true)
+	for mask in inc_mask:
+		set_collision_mask_value(mask, true)
+```
+
+`name` is an automatically created variable name for objects with Godot. We haven't declared it and do not need to declare it, it just exists. Also, note that we only turn on layers and masks that are passed in and don't turn others off. We're going to make sure that all masks and layers are turned off, by default, in the Inspector in the next step.
+
+### Turn off Player Layers and Mask
+
+The last thing we're doing in this build, before saving and checking in code to our repo, is updating the properties for our `Player` object. Open the Player scene, select the "Player" root object in the Scene window, and use the Inspector window. We'll go down to the CollisionObject2D section and unselect all Layers and Masks.
+
+![Unselect the Collision Layers and Masks for the Player object](/readmeassets/build_2/2_unselect_all_layers_and_masks.png)
+
+Now let's save and run the scene with F6. You'll see the Player really has no changes from before, but the code runs and the Player can move.
+
+Next we'll integrate the updated Player and Generator into our World object and see how things work!
