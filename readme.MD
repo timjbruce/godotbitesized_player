@@ -194,6 +194,52 @@ func initialize(inc_name: String, inc_speed: int, inc_layers: Array[int], inc_ma
 
 `name` is an automatically created variable name for objects with Godot. We haven't declared it and do not need to declare it, it just exists. Also, note that we only turn on layers and masks that are passed in and don't turn others off. We're going to make sure that all masks and layers are turned off, by default, in the Inspector in the next step.
 
+<details>
+<summary>Full code for player.gd</summary>
+```
+extends CharacterBody2D
+class_name player_2d_body
+
+@export var speed: int = 600
+
+
+func initialize(inc_name: String, inc_speed: int, inc_layers: Array[int], inc_mask: Array[int]) -> void:
+	name = inc_name
+	speed = inc_speed
+	for layer in inc_layers:
+		set_collision_layer_value(layer, true)
+	for mask in inc_mask:
+		set_collision_mask_value(mask, true)
+
+
+func _process(_delta: float) -> void:
+	var x_direction: float = Input.get_axis("left", "right")
+	var y_direction: float = Input.get_axis("up", "down")
+	if x_direction:
+		velocity.x = x_direction * speed
+	else:
+		velocity.x = move_toward(velocity.x, 0, speed)
+	if y_direction:
+		velocity.y = y_direction * speed
+	else:
+		velocity.y = move_toward(velocity.y, 0, speed)
+		
+	if velocity.x != 0:
+		$AnimatedSprite2D.animation = "walk"
+		$AnimatedSprite2D.flip_v = false
+		$AnimatedSprite2D.flip_h = velocity.x < 0
+	elif velocity.y < 0:
+		$AnimatedSprite2D.animation = "up"
+	elif velocity.y > 0:
+		$AnimatedSprite2D.animation = "down"
+	else:
+		$AnimatedSprite2D.animation = "idle"
+	$AnimatedSprite2D.play()
+	
+	move_and_slide()
+```
+</details>
+
 ### Turn off Player Layers and Mask
 
 The last thing we're doing in this build, before saving and checking in code to our repo, is updating the properties for our `Player` object. Open the Player scene, select the "Player" root object in the Scene window, and use the Inspector window. We'll go down to the CollisionObject2D section and unselect all Layers and Masks.
