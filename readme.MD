@@ -194,6 +194,14 @@ func initialize(inc_name: String, inc_speed: int, inc_layers: Array[int], inc_ma
 
 `name` is an automatically created variable name for objects with Godot. We haven't declared it and do not need to declare it, it just exists. Also, note that we only turn on layers and masks that are passed in and don't turn others off. We're going to make sure that all masks and layers are turned off, by default, in the Inspector in the next step.
 
+We'll also add a function to set the location of the Player, for after the Generator is done.
+
+```
+func set_location(new_location: Vector2i) -> void:
+	global_position = new_location	
+```
+
+
 <details>
 <summary>Full code for player.gd</summary>
 ```
@@ -210,6 +218,10 @@ func initialize(inc_name: String, inc_speed: int, inc_layers: Array[int], inc_ma
 		set_collision_layer_value(layer, true)
 	for mask in inc_mask:
 		set_collision_mask_value(mask, true)
+
+
+func set_location(new_location: Vector2i) -> void:
+	global_position = new_location	
 
 
 func _process(_delta: float) -> void:
@@ -237,6 +249,7 @@ func _process(_delta: float) -> void:
 	$AnimatedSprite2D.play()
 	
 	move_and_slide()
+
 ```
 </details>
 

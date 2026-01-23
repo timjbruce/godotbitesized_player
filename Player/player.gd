@@ -13,6 +13,10 @@ func initialize(inc_name: String, inc_speed: int, inc_layers: Array[int], inc_ma
 		set_collision_mask_value(mask, true)
 
 
+func set_location(new_location: Vector2i) -> void:
+	global_position = new_location	
+
+
 func _process(_delta: float) -> void:
 	var x_direction: float = Input.get_axis("left", "right")
 	var y_direction: float = Input.get_axis("up", "down")
