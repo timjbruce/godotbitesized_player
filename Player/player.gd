@@ -14,8 +14,6 @@ var _y_direction: float = 0.0
 func _ready() -> void:
 	if get_parent().name == "root":
 		initialize("Tim", 500, [3], [2], PlayerType.Player, null)
-		#initialize("Tim", 500, [4], [2], PlayerType.NPC, null)
-		#initialize("Tim", 500, [5], [2], PlayerType.Enemy, null)
 
 
 func initialize(inc_name: String, inc_speed: int, inc_layers: Array[int], inc_mask: Array[int], 
