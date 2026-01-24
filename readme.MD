@@ -204,6 +204,7 @@ func set_location(new_location: Vector2i) -> void:
 
 <details>
 <summary>Full code for player.gd</summary>
+
 ```
 extends CharacterBody2D
 class_name player_2d_body
@@ -262,3 +263,232 @@ The last thing we're doing in this build, before saving and checking in code to 
 Now let's save and run the scene with F6. You'll see the Player really has no changes from before, but the code runs and the Player can move.
 
 Next we'll integrate the updated Player and Generator into our World object and see how things work!
+
+## Build 3
+
+The next few builds of the Player are going to start adding more features to our Player. Some of these features will grow into components, such as Weapons and Inventory. Other features will be captured within the current scene. For Build 3, we're focusing only on what is contained in the Player scene.
+
+### What Makes a Good Component Versus a Good Feature?
+
+Before we jump into the code, let's talk a bit of philosophy about components versus features. There is no one way to determine if something makes a better component or feature. I tend to look at it this way: is it small and large enough to maintain and does it provide enough functionality by itself?
+
+First, on the size side, I look at the component from the Scene tree and size of code. I tend to lean towards mid-size components. When they get too large, I wonder if I am making something more complicated than it needs to be by combining components into a single package. Sometimes, combining components together can be a good thing. But, when it becomes too large that I spend more time trying to debug something versus adding a feature, then I think it might be time to either re-factor and split the components. If the component is too small, I'm creating more maintenance for myself.
+
+Second, I tend to think about how useful a component can be with other components. If there's only one real use of the component, it won't pass my sniff test especially if it only has a few lines of code. At that point, the main component will be calling it and all I've really done is add a layer of complexity to projects by adding another component that needs to be copied to my main project for no other purpose.
+
+Think about a health bar as an example. Health bars could be a component and show the current value and maximum values of a Players health. It could do this with text and / or a bar. You can add to it and subtract from it. That's probably 5 lines of code and another project. In my perspective, too small for a component and just do it as a feature.
+
+On the other hand, could you create a component that allows people to set a ton of variables and, voila!, they have a game? Sure you could. Should you, is definitely a different question. In my perspective, this is too big for a component. If you decide this is a route you want to go, let me know - I'm interested in where you end up!
+
+Now let's move on to adding some features!
+
+### Switching Between Players, Enemies, and NPCs
+
+The first thing I want to do is to add the ability to use the Player component as an Enemy and as an NPC, as well as a Player. To do this, I'm going to add a `type` to the class that can be set at the component level. You'll remember that we added a `name` value to the `initialize` function and we could use that. However, each object in a Godot game needs a unique name. We could substring and check the `name` for the type of Player this is, but I find it is easier to do with a clearly defined field. Let's update the `player.gd` script header to include this
+
+```
+enum PlayerType { Player, Enemy, NPC }
+
+@export var speed: int = 600
+@export var type: PlayerType = PlayerType.Player 
+@export var animation: AnimatedSprite2D = null
+```
+
+The enum provides a list of appropriate values that can be used for type. The variable `type` uses this enum as its data type, allowing us to make sure the correct values are provided for this field and we don't get unintended effects from bad input. We also added a field for an animation to be passed in. We probably don't want our NPCs, players, and enemies to all look the same.
+
+Next, we'll add some member variables to handle the x_direction and y_direction inputs or calculations. We'll use the inputs for actual players, but the NPCs and enemies should probably move based on calculations versus the input. I've put the `_` in front of these variables as a reminder that they should not be accessed directly or `@export`ed later.
+
+```
+var _x_direction: float = 0.0
+var _y_direction: float = 0.0
+```
+
+Next, we're going to update the `_process` function to not handle input from the actual game player to control the enemy or NPC. We still need it to be able to move, and we still want the animations. So, let's wrap the input lines with an if statement that can check if this instance of Player is a player! We also need to reference the new member variables we just created.
+
+```
+func _process(_delta: float) -> void:
+	if type == PlayerType.Player:
+		_x_direction = Input.get_axis("left", "right")
+		_y_direction = Input.get_axis("up", "down")
+	if _x_direction:
+		velocity.x = _x_direction * speed
+	else:
+		velocity.x = move_toward(velocity.x, 0, speed)
+	if _y_direction:
+		velocity.y = _y_direction * speed
+	else:
+		velocity.y = move_toward(velocity.y, 0, speed)
+		
+	if velocity.x != 0:
+		$AnimatedSprite2D.animation = "walk"
+		$AnimatedSprite2D.flip_v = false
+		$AnimatedSprite2D.flip_h = velocity.x < 0
+	elif velocity.y < 0:
+		$AnimatedSprite2D.animation = "up"
+	elif velocity.y > 0:
+		$AnimatedSprite2D.animation = "down"
+	else:
+		$AnimatedSprite2D.animation = "idle"
+	$AnimatedSprite2D.play()
+```
+
+Before we make further to code, open the Player scene and change the name of "Label" to "PlayerTypeLabel" as shown below.
+
+![Change the name of Label to PlayerTypeLabel in the Scene Tree](/readmeassets/build_3/3_change_label_name.png)
+
+We'll also change the `initialize` function to take in two new arguments for the type and animation variable. We're going to make animation optional, as we still want to be able to test the Player component without having to deal with multiple animations within the component.
+
+```
+func initialize(inc_name: String, inc_speed: int, inc_layers: Array[int], inc_mask: Array[int], 
+	inc_type: PlayerType, inc_animation: AnimatedSprite2D = null) -> void:
+		name = inc_name
+		speed = inc_speed
+		type = inc_type
+		match type:
+			PlayerType.Player:
+				$PlayerTypeLabel.text = "Player"
+			PlayerType.Enemy:
+				$PlayerTypeLabel.text = "Enemy"
+			PlayerType.NPC:
+				$PlayerTypeLabel.text = "NPC"
+			_:
+				"!!!!!!!"
+		if inc_animation:
+			$AnimatedSprite2D.sprite_frames = inc_animation.sprite_frames
+		for layer in inc_layers:
+			set_collision_layer_value(layer, true)
+		for mask in inc_mask:
+			set_collision_mask_value(mask, true)
+```
+
+Lastly, we are going to use the `_ready` function to do some testing with this component.
+
+```
+func _ready() -> void:
+	if get_parent().name == "root":
+		initialize("Tim", 500, [3], [2], PlayerType.Player, null)
+```
+
+Now, if you hit F6 to play the scene, a Player with the Label of "Player" should show up and you can use your controller to move them around. Don't forget to override the ingame camera to see them move on the screen. You can also test this with NPC and Enemies by changing the `PlayerType.Player` values to `PlayerType.NPC` and PlayerType.Enemy` respectively.
+
+### Adding a Test Harness
+
+This is the spot where I normally add a testing scene, as I want to see all the types in one scene. Let's go to the FileSystem and add a new directory called "Test" at the root of the project, like below. This will be our test harness, so we don't have to do crazy stuff like editing and commenting out test cases, like we'd have to if we just used _ready.
+
+![Add a test folder for the Player project](/readmeassets/build_3/3_add_test_harness.png)
+
+Now, create a new scene in the test folder and call it "Test". Keep it as a 2D Scene.
+
+![Add the new testing scene, which will be the scene for the test harness](/readmeassets/build_3/3_add_test_scene.png)
+
+In the Scene window for the "Test" scene, attach a script to the Test node. Accept the default values that appear in the Attach Node Script dialog and click "Create".
+
+![Add a script to the Test Node](/readmeassets/build_3/3_add_script_to_test.png)
+
+Now, add the following code to the `test.gd` file:
+
+```
+extends Node2D
+
+var player_node: PackedScene = preload("res://Player/Player.tscn")
+
+func _ready() -> void:
+	var layer: Array[int] = [2]
+	var mask: Array[int] = [2]
+	var test_cases = [["Tim1", 500, layer, mask, player_2d_body.PlayerType.Player, null],
+						["Tim2", 500, layer, mask, player_2d_body.PlayerType.NPC, null],
+						["Tim3", 500, layer, mask, player_2d_body.PlayerType.Enemy, null]]
+	var p1: player_2d_body
+	var i: int = 0
+	for test_case in test_cases:
+		p1 = player_node.instantiate()
+		p1.initialize(test_case[0], test_case[1], test_case[2], test_case[3], test_case[4], test_case[5])
+		add_child(p1)
+		p1.set_location(Vector2i(i * 50, i * 50))
+		i+=1
+```
+
+This will create a Player, NPC, and Enemy and add them to the Test scene. If you use your controller, you should see that only your Player component moves.
+
+![Testing your player class shows that only your "Player" moves on the screen and the other two stay still](/readmeassets/build_3/3_testing_your_player_class.png)
+
+<details>
+<summary>Full listing for player.gd</summary>
+
+```
+extends CharacterBody2D
+class_name player_2d_body
+
+enum PlayerType { Player, Enemy, NPC }
+
+@export var speed: int = 600
+@export var type: PlayerType = PlayerType.Player 
+@export var animation: AnimatedSprite2D = null
+
+var _x_direction: float = 0.0
+var _y_direction: float = 0.0
+
+
+func _ready() -> void:
+	if get_parent().name == "root":
+		initialize("Tim", 500, [3], [2], PlayerType.Player, null)
+
+
+func initialize(inc_name: String, inc_speed: int, inc_layers: Array[int], inc_mask: Array[int], 
+	inc_type: PlayerType, inc_animation: AnimatedSprite2D = null) -> void:
+		name = inc_name
+		speed = inc_speed
+		type = inc_type
+		match type:
+			PlayerType.Player:
+				$PlayerTypeLabel.text = "Player"
+			PlayerType.Enemy:
+				$PlayerTypeLabel.text = "Enemy"
+			PlayerType.NPC:
+				$PlayerTypeLabel.text = "NPC"
+			_:
+				"!!!!!!!"
+		if inc_animation:
+			$AnimatedSprite2D.sprite_frames = inc_animation.sprite_frames
+		for layer in inc_layers:
+			set_collision_layer_value(layer, true)
+		for mask in inc_mask:
+			set_collision_mask_value(mask, true)
+
+
+func set_location(new_location: Vector2i) -> void:
+	global_position = new_location	
+
+
+func _process(_delta: float) -> void:
+	if type == PlayerType.Player:
+		_x_direction = Input.get_axis("left", "right")
+		_y_direction = Input.get_axis("up", "down")
+	if _x_direction:
+		velocity.x = _x_direction * speed
+	else:
+		velocity.x = move_toward(velocity.x, 0, speed)
+	if _y_direction:
+		velocity.y = _y_direction * speed
+	else:
+		velocity.y = move_toward(velocity.y, 0, speed)
+		
+	if velocity.x != 0:
+		$AnimatedSprite2D.animation = "walk"
+		$AnimatedSprite2D.flip_v = false
+		$AnimatedSprite2D.flip_h = velocity.x < 0
+	elif velocity.y < 0:
+		$AnimatedSprite2D.animation = "up"
+	elif velocity.y > 0:
+		$AnimatedSprite2D.animation = "down"
+	else:
+		$AnimatedSprite2D.animation = "idle"
+	$AnimatedSprite2D.play()
+	
+	move_and_slide()
+```
+
+</detail>
+
+
+The next lesson will integrate the updated Player component in the World project.
