@@ -370,6 +370,8 @@ func _ready() -> void:
 
 Now, if you hit F6 to play the scene, a Player with the Label of "Player" should show up and you can use your controller to move them around. Don't forget to override the ingame camera to see them move on the screen. You can also test this with NPC and Enemies by changing the `PlayerType.Player` values to `PlayerType.NPC` and PlayerType.Enemy` respectively.
 
+### Adding a Test Harness
+
 This is the spot where I normally add a testing scene, as I want to see all the types in one scene. Let's go to the FileSystem and add a new directory called "Test" at the root of the project, like below. This will be our test harness, so we don't have to do crazy stuff like editing and commenting out test cases, like we'd have to if we just used _ready.
 
 ![Add a test folder for the Player project](/readmeassets/build_3/3_add_test_harness.png)
