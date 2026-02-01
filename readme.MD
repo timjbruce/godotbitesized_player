@@ -8,6 +8,10 @@ This repo represents the Godot Bite Sized Player - 2D. What is a Bite Sized Play
 
 [Build 2](#build-2) - Add physics via an initialize script
 
+[Build 3](#build-3) - Adding a feature to use this component for Players, NPCs, and Enemies
+
+[Build 4](#build-4) - Adding movement to NPCs and Enemies
+
 ## Build 1
 
 For Build 1, we're going to form the _very_ basic Player for a game. For 2D Games, this means a 2D Scene with an image that can move in different directions. For 2D games in Godot, we should use (CharacterBody2D)[https://docs.godotengine.org/en/stable/classes/class_characterbody2d.html] as the base object. This gives us a bunch of capabilities, like handling physics so it can move. Your end project will look something like this when you look at the file browser:
@@ -488,7 +492,208 @@ func _process(_delta: float) -> void:
 	move_and_slide()
 ```
 
-</detail>
+</details>
 
 
 The next lesson will integrate the updated Player component in the World project.
+
+
+## Build 4
+
+In this build, we'll be leveling off the abilities of the all types of player_2d_body to have the same ability - movement. Currently, this is the only thing that separates our Player type from the others. There will be other things that we will add to the player_2d_body, including inventory, equipment, and interaction. These features will look very similar in nature to what we're going to do for movement.
+
+### Sub Components
+
+This build will feature sub components, or components that we will only use with the player_2d_body but are not included in the Player scene. Sub components are scenes that can be loaded by player_2d_body class. Specifically, we're going to add sub components that allow the Enemy type to "look" for the Player. Also, we want the NPC type to avoid the Enemy. The Enemy looking should be only in the direction they are moving. I tend to use conical or triangular shapes for looking forward. The NPC will be more reactive, always looking around in a panic while moving in one direction. For the NPC, I'll use a circle with them at the center. Both of these will use the `ShapeCast2D` node as their base. 
+
+You might wonder why these sub components aren't just part of the scene if these components are only used by player_2d_body. It seems pretty easy that you could turn them on and off as needed. This is a great question! I tend to look at what the component is doing and if it is a waste of CPU cycles to include in the main component scene. Both of these cases will be handling events with the built-in `_physics_process` function. We don't need this for the Player type. Since this internal function is triggered 60 times per second by default for each node, I like to make sure it only processes code when it is needed.
+
+Your next question might be along the lines of, "but this is used in most of our player_2d_body nodes now. What's the big difference to leave it out of just player?" For this implementation, you're right. We may, however, want games where the NPC stays still. Or wanders but doesn't care about the Enemy. Or something else. Or, what if only your Player type requires physics checking? This approach gives us flexibility to adjust the sub component while leaving the main component mostly unedited.
+
+This might seem like a lot of extra work, especially at first. Thinking about this flexibility and isolating functionality can help with re-use down the road.
+
+### Our First Sub Component - A shared script
+
+Once you start working with sub components, you'll find that some structures and data elements need to be shared across objects. Our `PlayerType` enumeration is a big one that will help with sub components.
+
+Step 1, in the FileSystem window, create a `Scripts` folder under the `Player` folder. We will add a `player_shared.gd` script to that folder. The end result should look like this. The `player_shared.gd` script will act as globals for our player_2d_body class.
+
+![Create a Scripts folder and add a player_shared.gd file to it. We will use this to share global definitions and functions for player_2d_body](/readmeassets/build_4/4_shared_script_created.png)
+
+Next, update the `player_shared.gd` file with the following code:
+
+```
+extends Node
+class_name PlayerShared
+
+enum PlayerType { Player, Enemy, NPC }
+```
+
+The class_name `PlayerShared` gives us a reference to call items in this file by and we are moving just the enum for PlayerType at this time. This way, all of our components in the Player folder can reference the enum values for PlayerType by using the code `PlayerShared.PlayerType.` syntax before the value.
+
+Save this file and close the editor window. We will update the player_2d_body class later, after we get the other sub components setup.
+
+### Our Second Sub Component - SightLine
+
+The SightLine sub component will be used by Enemy types. It will be a line of sight for the enemies and will present a conic shape from the Enemy, expanding outward to a limit. It should also be in the direction the Enemy is moving.
+
+I like to create subdirectories for each sub component, as this keeps it easy to manage. So, create a new folder under the `Player` folder called `Sightline`. The result should look like this.
+
+![Create a new folder for the Sightline scene under the Player folder](/readmeassets/build_4/4_sightline_folder.png)
+
+We're going to create a new scene under this folder called `Sightline`. It should be of type `ShapeCast2D`.
+
+![Create the new Sightline scene using the ShapeCast2D node as the base](/readmeassets/build_4/4_sightline_scene.png)
+
+In the Scene window, select the `SightLine` node. To enable this node, we'll need to set a shape to it. Then we can add in code to support the Enemy type using it to "look" for Players. To set the shape, look in the Inspector window and click on the down arrow by the "Shape" field. Select the "ConvexPolygonShape2D" value.
+
+![Start the process to set the shape of the Sightline 2D shape](/readmeassets/build_4/4_set_shape_of_sightline.png)
+
+Click on the "ConvexPolygonShape2D" field value and then on the "PackedVector2" field value to open the fields where we can build the shape.
+
+For size, enter "3" so we can add 3 points to the shape. We'll use the points (0,0), (135, -45), and (135, 45).
+
+![Set the SightLine points so we get our cone for the enemy to look through](/readmeassets/build_4/4_set_sightline_points.png)
+
+Next, set the Target Position in the Inspect to x = 0.0 px and y = 0.0 px. Also, uncheck any selected Collision Masks.
+
+![Set the SightLine target position to 0 and 0, also uncheck any selected collision masks](/readmeassets/build_4/4_set_sightline_position_and_collision_mask.png)
+
+Add a script to the Sightline scene and name it `Sightline`. We will then place the code below in this file.
+
+```
+extends ShapeCast2D
+class_name _sightline
+
+signal found_target(player_2d_body)
+signal hit_object()
+
+var _has_target: bool = false
+
+
+func _physics_process(delta):
+	# Common Block #
+	
+	# Per Type Block #
+	match get_parent().type:
+		PlayerShared.PlayerType.Player:
+			return
+		PlayerShared.PlayerType.Enemy:
+			if is_colliding():
+				var collides = get_collision_count()
+				for i in collides:
+					var obj = get_collider(i)
+					match obj.name:
+						"player":
+							pass
+							if not _has_target:
+								_has_target = true
+								found_target.emit(obj)
+						"DefaultTileMap":
+							if not _has_target and global_position.distance_to(collision_result[0]["point"]) < 70:
+								hit_object.emit()
+						_:
+							if not _has_target and "enemy" in obj.name and global_position.distance_to(collision_result[0]["point"]) < 50:
+								hit_object.emit()
+							else:
+								print("Not looking for ", obj.name)
+		PlayerShared.PlayerType.NPC:
+			return
+		_:
+			print("_physics_process Did not have a type")
+			return
+	#Common Block  
+
+func set_direction(inc_vector2: Vector2) -> void:
+	rotation = inc_vector2.angle()
+
+
+```
+
+This script will run 60 times per second for components it is attached to. If you look through it, you can see there are 2 signals it can emit, `found_target` and `hit_object`. `found_target` is used for when the ShapeCast2D has found a target to follow. It will send the collision target to whatever is connected to it. `hit_object` is used to denote the instance of the class has run into something and cannot move in that direction any further. You've seen those "wall slides," where an enemy or something continues to move slowly along the wall and eventually locks into a corner. This can help prevent that.
+
+Next, look at the `_physics_process` function. This function introduces a technique I normally use in creating components, and that is putting in 3 code blocks for the function. First is a common block, next a per type block, and then finally a close out common block. I try to organize my code so that it fits in this construct, as it makes long term maintenance easier for me. It also helps reduce spaghetti code! I like to use a `match` statement with all the types, even if they aren't being used. The match should never hit these blocks in this implementation, so I just use `return` to skip the rest of the function.
+
+The `Enemy` case is the most interesting. It looks for collisions `player` (who the Enemies will hunt) and `DefaultTileMap` (the walls). If it finds a player, it will emit that the player is found, via `found_target` and allow the listener to do what it will with this information. If it finds a wall, it will emit the `hit_object` signal to let the listener know that the wall is hit. Finally, it will also try to avoid running over other `enemy_` instances. I left in a print statement if it runs into something else that is not explicitly expected. This can be helpful in the future.
+
+Finally, there is a function called `set_direction`. This is used to set the direction of the ShapeCast2D to be in front of where the Enemy is moving. This is not called within this class, but will be called by the player_2d_body class.
+
+Save the script file and scene and we'll move on to our next sub component.
+
+### The Scram Circle, Our Third Sub Component
+
+The Scram Circle will be used by the NPC types, who will constantly be looking for any Enemies to run from. To do this, we'll use a circle shape to simulate the constant scanning, versus an always moving shape.
+
+Start by creating a new folder under the Player folder named `Scramcircle`.
+
+![Create a Scramcircle folder under the Player folder](/readmeassets/build_4/4_scramcircle_folder.png)
+
+Under the `Scramcircle` folder, create a new scene called `Scramcircle`. It should use the `ShapeCast2D` node.
+
+![Create the scene for the Scramcircle using the ShapeCast2D node](/readmeassets/build_4/4_scramcircle_scene.png)
+
+Select the `ScramCircle` node in the Scene window. We need to set the shape, just like we did for the SightLine. Click the down arrow by the "Shape" field and select "CircleShape2D".
+
+![Set the shape of the scramcircle to circleshape2d](/readmeassets/build_4/4_set_scramcircle_shape.png)
+
+Set the radius to 100.0 px, Target Position to 0.0 px, 0.0 px, and unselect the Collision Masks.
+
+![Set the properties for the scramcircle to a 100 px size, located at 0.0, 0.0, with no collision masks](/readmeassets/build_4/4_scramcircle_properties.png)
+
+Next, attach a script to the Scramcircle and call it `scramcircle.gd`. We will use the following code in this file.
+
+```
+extends ShapeCast2D
+class_name _scramcircle
+
+signal scram_target(player_2d_body)
+signal scram_target_clear()
+signal hit_object()
+
+var _has_target: bool = false
+
+	
+func _physics_process(delta):
+	# Common Block #
+	
+	# Per Type Block #
+	match get_parent().type:
+		PlayerShared.PlayerType.Player:
+			return
+		PlayerShared.PlayerType.Enemy:
+			return
+		PlayerShared.PlayerType.NPC:
+			var _scram_target: bool = false
+			if is_colliding():
+				var collides = get_collision_count()
+				for i in collides:
+					var obj = get_collider(i)
+					match obj.name:
+						"player":
+							pass
+						"DefaultTileMap":
+							if not _has_target and global_position.distance_to(collision_result[0]["point"]) < 70:
+								hit_object.emit()
+						_:
+							if not _has_target and "enemy" in obj.name and global_position.distance_to(collision_result[0]["point"]) < 100:
+								print("enemy in range ")
+								scram_target.emit(obj)
+								_has_target = true
+								_scram_target = true
+							else:
+								print("ScramCircle Not looking for ", obj.name)
+			if not _scram_target and _has_target:
+				_has_target = false
+				scram_target_clear.emit()
+		_:
+			print("_physics_process Did not have a type")
+			return
+	#Common Block  
+
+```
+
+This code looks similar to the Sightline code. It has 3 signals it can emit, one to say that it found a target to avoid (`scram_target`), one to clear the target to avoid (`scram_target_clear`), and one to say it hit a wall or other blocker (`hit_object`).
+
+In the `_process_physics` function, we can see that the NPC is avoiding walls. When it locates an enemy it sets a flag internally to denote that it found an enemy and emits the signal that one is in range. The listener can then take action on this. If it escapes from the target, it sends a the clear signal.
+
+Save this script file and scene and we'll update the player code to use these sub components.
