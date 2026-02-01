@@ -596,7 +596,7 @@ func _physics_process(delta):
 							if not _has_target and "enemy" in obj.name and global_position.distance_to(collision_result[0]["point"]) < 50:
 								hit_object.emit()
 							else:
-								print("Not looking for ", obj.name)
+								print("SightLine: Not looking for ", obj.name)
 		PlayerShared.PlayerType.NPC:
 			return
 		_:
@@ -681,7 +681,7 @@ func _physics_process(delta):
 								_has_target = true
 								_scram_target = true
 							else:
-								print("ScramCircle Not looking for ", obj.name)
+								print("ScramCircle: Not looking for ", obj.name)
 			if not _scram_target and _has_target:
 				_has_target = false
 				scram_target_clear.emit()
@@ -697,3 +697,390 @@ This code looks similar to the Sightline code. It has 3 signals it can emit, one
 In the `_process_physics` function, we can see that the NPC is avoiding walls. When it locates an enemy it sets a flag internally to denote that it found an enemy and emits the signal that one is in range. The listener can then take action on this. If it escapes from the target, it sends a the clear signal.
 
 Save this script file and scene and we'll update the player code to use these sub components.
+
+### Player Updates
+
+The player_2d_body now just needs to use the sub components we've created. There's some general maintenance and feature updates that we need to make to get this working.
+
+Open up the `player.gd` file. The first step is to remove the `PlayerType enum` line. We've moved that to the `player_shared.gd` script. Next, scan the file for any lines that show with a red highlight. These are lines in error and are broken because we just deleted the enum line. You can fix them by placing `PlayerShared.` in front of each reference to `PlayerType` like so:
+
+```
+@export var type: PlayerShared.PlayerType = PlayerShared.PlayerType.Player 
+```
+
+There should be seven placed to update this code. If you don't get them all, there is a copy of the entire player.gd file below.
+
+We're also going to add the following member variables to the top of the file, under the `@export lines`.
+
+```
+var _sight_line: _sightline = null
+var _target: player_2d_body = null
+
+var _scram_circle: _scramcircle = null
+var _target_cleared: bool = false
+```
+
+`_sight_line` and `_scram_circle` will be used for cases where we need the sub components loaded. The other variables are used to keep state from the ShapeCast2Ds we're using.
+
+Now, we'll update the `initialize` function with the following code:
+
+```
+func initialize(inc_name: String, inc_speed: int, inc_layers: Array[int], inc_mask: Array[int], 
+	# Common Block #
+	inc_type: PlayerShared.PlayerType, inc_animation: AnimatedSprite2D = null) -> void:
+		name = inc_name
+		speed = inc_speed
+		type = inc_type
+		if inc_animation:
+			$AnimatedSprite2D.sprite_frames = inc_animation.sprite_frames
+		for layer in inc_layers:
+			set_collision_layer_value(layer, true)
+		for mask in inc_mask:
+			set_collision_mask_value(mask, true)
+		
+	# Per Type Block #
+		match type:
+			PlayerShared.PlayerType.Player:
+				$PlayerTypeLabel.text = "Player"
+				$Camera2D.enabled = true
+			PlayerShared.PlayerType.Enemy:
+				$PlayerTypeLabel.text = "Enemy"
+				$Camera2D.enabled = false
+				_sight_line = preload("res://Player/Sightline/Sightline.tscn").instantiate()
+				for mask in inc_mask:
+					_sight_line.set_collision_mask_value(mask, true)
+				add_child(_sight_line)
+				_sight_line.found_target.connect(_on_found_target)
+				_sight_line.hit_object.connect(_on_hit_object)
+			PlayerShared.PlayerType.NPC:
+				$PlayerTypeLabel.text = "NPC"
+				$Camera2D.enabled = false
+				_scram_circle = preload("res://Player/Scramcircle/Scramcircle.tscn").instantiate()
+				for mask in inc_mask:
+					_scram_circle.set_collision_mask_value(mask, true)
+				add_child(_scram_circle)
+				_scram_circle.hit_object.connect(_on_hit_object)
+				_scram_circle.scram_target.connect(_on_scram_target)
+				_scram_circle.scram_target_clear.connect(_on_clear_scram_target)
+			_:
+				print("initialize Did not have a type")
+				$Camera2D.enabled = false
+		
+	# Common Block #
+```
+
+You will see some errors highlighted on the `connect` lines, since we do not have those functions added yet. The Enemy type will now load the "Sightline" component and look for collisions. It also connects to the signals to handle updates from the sub component. The NPC version does much the same while using the "Scramcircle" component.
+
+Next, we'll update `_process` with the following code. We need the Enemies and NPCs to be able to move
+
+```
+func _process(_delta: float) -> void:
+	# Common Block #
+	
+	# Per Type Block #
+	match type:
+		PlayerShared.PlayerType.Player:
+			_x_direction = Input.get_axis("left", "right")
+			_y_direction = Input.get_axis("up", "down")		
+			if _x_direction:
+				velocity.x = _x_direction * speed
+			else:
+				velocity.x = move_toward(velocity.x, 0, speed)
+			if _y_direction:
+				velocity.y = _y_direction * speed
+			else:
+				velocity.y = move_toward(velocity.y, 0, speed)
+		PlayerShared.PlayerType.Enemy:
+			if _target:
+				var cur_vector: Vector2 = (_target.position - global_position).normalized()
+				velocity = cur_vector * speed
+				_sight_line.set_direction(cur_vector)
+			else:
+				if velocity == Vector2.ZERO:
+					var rand_vector: Vector2 = _random_vector()
+					velocity = rand_vector * (speed / 2.0)
+					_sight_line.set_direction(rand_vector)
+		PlayerShared.PlayerType.NPC:
+			if _target:
+				var cur_vector: Vector2 = (_target.position - global_position).normalized().rotated(180)
+				velocity = cur_vector * speed * 2
+			else:
+				if velocity == Vector2.ZERO:
+					var rand_vector: Vector2 = _random_vector()
+					velocity = rand_vector * (speed)
+				elif _target_cleared:
+					_target_cleared = false
+					var rand_vector: Vector2 = _random_vector()
+					velocity = rand_vector * (speed)
+		_:
+			print("_process did not have a type ")
+		
+	# Common Block
+	if velocity.x != 0 and abs(velocity.x) > abs(velocity.y):
+		$AnimatedSprite2D.animation = "walk"
+		$AnimatedSprite2D.flip_v = false
+		$AnimatedSprite2D.flip_h = velocity.x < 0
+	elif velocity.y < 0:
+		$AnimatedSprite2D.animation = "up"
+	elif velocity.y > 0:
+		$AnimatedSprite2D.animation = "down"
+	else:
+		$AnimatedSprite2D.animation = "idle"
+	$AnimatedSprite2D.play()
+	
+	move_and_slide()
+```
+
+The Enemies will walk slowly in a random direction. If they detect a Player, they will walk towards the player at their normal pace. NPCs will walk at a normal pace. If they detect an Enemy, they will speed up in a direction away from the Enemy.
+
+Finally, we will add the functions to respond to signals and a helper function to generate a random Vector2. The random Vector2 function will try to locate what directions have collisions and set min and max variables to, hopefully, get a random Vector2 that moves to an open spot.
+
+```
+func _on_found_target(inc_target: player_2d_body) -> void:
+	_target = inc_target
+
+
+func _on_scram_target(inc_target: player_2d_body) -> void:
+	_target = inc_target
+
+
+func _on_clear_scram_target() -> void:
+	_target_cleared = true
+	_target = null
+
+	
+func _on_hit_object() -> void:
+	velocity = Vector2.ZERO
+
+
+func _random_vector() -> Vector2:
+	#check up, down, left, and right - limit the vector to good locations
+	var raycast: RayCast2D = RayCast2D.new()
+	var x_min: float = -1.0
+	var x_max: float = 1.0
+	var y_min: float = -1.0
+	var y_max: float = 1.0
+	raycast.set_collision_mask_value(2, true)
+	raycast.target_position = Vector2i.RIGHT * 50
+	if raycast.is_colliding():
+		x_max = 0.25
+	raycast.target_position = Vector2i.LEFT * 50
+	if raycast.is_colliding():
+		x_min = -0.25
+	raycast.target_position = Vector2i.UP * 50
+	if raycast.is_colliding():
+		y_max = 0.25
+	raycast.target_position = Vector2i.DOWN * 50
+	if raycast.is_colliding():
+		y_min = -0.25
+	raycast.free()
+	return Vector2(randf_range(x_min, x_max), randf_range(y_min, y_max))
+```
+
+<summary>The entire player.gd file
+
+<details>
+
+```
+extends CharacterBody2D
+class_name player_2d_body
+
+@export var speed: int = 600
+@export var type: PlayerShared.PlayerType = PlayerShared.PlayerType.Player 
+@export var animation: AnimatedSprite2D = null
+
+var _x_direction: float = 0.0
+var _y_direction: float = 0.0
+
+var _sight_line: _sightline = null
+var _target: player_2d_body = null
+
+var _scram_circle: _scramcircle = null
+var _target_cleared: bool = false
+
+
+func _ready() -> void:
+	if get_parent().name == "root":
+		initialize("Tim", 500, [3], [2], PlayerShared.PlayerType.Player, null)
+
+
+func initialize(inc_name: String, inc_speed: int, inc_layers: Array[int], inc_mask: Array[int], 
+	# Common Block #
+	inc_type: PlayerShared.PlayerType, inc_animation: AnimatedSprite2D = null) -> void:
+		name = inc_name
+		speed = inc_speed
+		type = inc_type
+		if inc_animation:
+			$AnimatedSprite2D.sprite_frames = inc_animation.sprite_frames
+		for layer in inc_layers:
+			set_collision_layer_value(layer, true)
+		for mask in inc_mask:
+			set_collision_mask_value(mask, true)
+		
+	# Per Type Block #
+		match type:
+			PlayerShared.PlayerType.Player:
+				$PlayerTypeLabel.text = "Player"
+				$Camera2D.enabled = true
+			PlayerShared.PlayerType.Enemy:
+				$PlayerTypeLabel.text = "Enemy"
+				$Camera2D.enabled = false
+				_sight_line = preload("res://Player/Sightline/Sightline.tscn").instantiate()
+				for mask in inc_mask:
+					_sight_line.set_collision_mask_value(mask, true)
+				add_child(_sight_line)
+				_sight_line.found_target.connect(_on_found_target)
+				_sight_line.hit_object.connect(_on_hit_object)
+			PlayerShared.PlayerType.NPC:
+				$PlayerTypeLabel.text = "NPC"
+				$Camera2D.enabled = false
+				_scram_circle = preload("res://Player/Scramcircle/Scramcircle.tscn").instantiate()
+				for mask in inc_mask:
+					_scram_circle.set_collision_mask_value(mask, true)
+				add_child(_scram_circle)
+				_scram_circle.hit_object.connect(_on_hit_object)
+				_scram_circle.scram_target.connect(_on_scram_target)
+				_scram_circle.scram_target_clear.connect(_on_clear_scram_target)
+			_:
+				print("initialize Did not have a type")
+				$Camera2D.enabled = false
+		
+	# Common Block #
+
+
+func set_location(new_location: Vector2i) -> void:
+	global_position = new_location	
+
+
+func _process(_delta: float) -> void:
+	# Common Block #
+	
+	# Per Type Block #
+	match type:
+		PlayerShared.PlayerType.Player:
+			_x_direction = Input.get_axis("left", "right")
+			_y_direction = Input.get_axis("up", "down")		
+			if _x_direction:
+				velocity.x = _x_direction * speed
+			else:
+				velocity.x = move_toward(velocity.x, 0, speed)
+			if _y_direction:
+				velocity.y = _y_direction * speed
+			else:
+				velocity.y = move_toward(velocity.y, 0, speed)
+		PlayerShared.PlayerType.Enemy:
+			if _target:
+				var cur_vector: Vector2 = (_target.position - global_position).normalized()
+				velocity = cur_vector * speed
+				_sight_line.set_direction(cur_vector)
+			else:
+				if velocity == Vector2.ZERO:
+					var rand_vector: Vector2 = _random_vector()
+					velocity = rand_vector * (speed / 2.0)
+					_sight_line.set_direction(rand_vector)
+		PlayerShared.PlayerType.NPC:
+			if _target:
+				var cur_vector: Vector2 = (_target.position - global_position).normalized().rotated(180)
+				velocity = cur_vector * speed * 2
+			else:
+				if velocity == Vector2.ZERO:
+					var rand_vector: Vector2 = _random_vector()
+					velocity = rand_vector * (speed)
+				elif _target_cleared:
+					_target_cleared = false
+					var rand_vector: Vector2 = _random_vector()
+					velocity = rand_vector * (speed)
+		_:
+			print("_process did not have a type ")
+		
+	# Common Block
+	if velocity.x != 0 and abs(velocity.x) > abs(velocity.y):
+		$AnimatedSprite2D.animation = "walk"
+		$AnimatedSprite2D.flip_v = false
+		$AnimatedSprite2D.flip_h = velocity.x < 0
+	elif velocity.y < 0:
+		$AnimatedSprite2D.animation = "up"
+	elif velocity.y > 0:
+		$AnimatedSprite2D.animation = "down"
+	else:
+		$AnimatedSprite2D.animation = "idle"
+	$AnimatedSprite2D.play()
+	
+	move_and_slide()
+	
+func _on_found_target(inc_target: player_2d_body) -> void:
+	_target = inc_target
+
+
+func _on_scram_target(inc_target: player_2d_body) -> void:
+	_target = inc_target
+
+
+func _on_clear_scram_target() -> void:
+	_target_cleared = true
+	_target = null
+
+	
+func _on_hit_object() -> void:
+	velocity = Vector2.ZERO
+
+
+func _random_vector() -> Vector2:
+	#check up, down, left, and right - limit the vector to good locations
+	var raycast: RayCast2D = RayCast2D.new()
+	var x_min: float = -1.0
+	var x_max: float = 1.0
+	var y_min: float = -1.0
+	var y_max: float = 1.0
+	raycast.set_collision_mask_value(2, true)
+	raycast.target_position = Vector2i.RIGHT * 50
+	if raycast.is_colliding():
+		x_max = 0.25
+	raycast.target_position = Vector2i.LEFT * 50
+	if raycast.is_colliding():
+		x_min = -0.25
+	raycast.target_position = Vector2i.UP * 50
+	if raycast.is_colliding():
+		y_max = 0.25
+	raycast.target_position = Vector2i.DOWN * 50
+	if raycast.is_colliding():
+		y_min = -0.25
+	raycast.free()
+	return Vector2(randf_range(x_min, x_max), randf_range(y_min, y_max))
+```
+
+</details>
+
+</summary>
+
+### A Quick Test
+
+Open up your Test Scene and the `test.gd` file and update it to the following code:
+
+```
+extends Node2D
+
+var player_node: PackedScene = preload("res://Player/Player.tscn")
+
+func _ready() -> void:
+	var player_layer: Array[int] = [3]
+	var player_mask: Array[int] = [2, 3, 4, 5]
+	var enemy_layer: Array[int] = [4]
+	var enemy_mask: Array[int] = [2, 3, 4, 5]
+	var npc_layer: Array[int] = [5]
+	var npc_mask: Array[int] = [2, 3, 4, 5]
+	
+	var test_cases = [["player", 150, player_layer, player_mask, PlayerShared.PlayerType.Player, null],
+						["enemy", 25, enemy_layer, enemy_mask, PlayerShared.PlayerType.Enemy, null],
+						["npc", 25, npc_layer, npc_mask, PlayerShared.PlayerType.NPC, null]]
+	var p1: player_2d_body
+	var i: int = 0
+	for test_case in test_cases:
+		p1 = player_node.instantiate()
+		p1.initialize(test_case[0], test_case[1], test_case[2], test_case[3], test_case[4], test_case[5])
+		add_child(p1)
+		p1.set_location(Vector2i(i * 50, i * 50))
+		i+=1
+```
+
+The speed for NPCs and Enemies should be slow enough that you can move in front of the Enemy to get it to follow you. You may need to restart this a few times to get the Enemy to follow you to the NPC scram circle to get it to react. Next, we'll integrate this into the World project!

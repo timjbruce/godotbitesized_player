@@ -32,7 +32,7 @@ func _physics_process(delta):
 							if not _has_target and "enemy" in obj.name and global_position.distance_to(collision_result[0]["point"]) < 50:
 								hit_object.emit()
 							else:
-								print("Not looking for ", obj.name)
+								print("SightLine: Not looking for ", obj.name)
 		PlayerShared.PlayerType.NPC:
 			return
 		_:
